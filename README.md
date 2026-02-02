@@ -271,7 +271,7 @@ MIT License
 **Your Name**
 - GitHub: [@Mohumed Raslan](https://github.com/mohumedraslan)
 - LinkedIn: [@Mohumed Raslan](https://www.linkedin.com/in/mohumed-raslan/)
-
+- Email: mohumedraslan@example.com
 ---
 
 **⭐ Star this repo if you find it useful!**
