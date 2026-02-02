@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+venv/
+.ipynb_checkpoints/
+*.log
+.pytest_cache/
+.coverage
+data/
+models/
+.env
+.dvc/cache
+.dvc/tmp
+wandb/
