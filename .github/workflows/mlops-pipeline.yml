@@ -1,0 +1,226 @@
+name: MLOps Pipeline - Sentiment Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: '3.9'
+  DVC_REMOTE: 'myremote'
+
+jobs:
+  test:
+    name: Test & Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black
+    
+    - name: Lint with flake8
+      run: |
+        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Format check with black
+      run: |
+        black --check src/
+    
+    - name: Configure DVC
+      env:
+        GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+      run: |
+        dvc remote modify myremote --local gdrive_use_service_account true
+        echo "$GDRIVE_CREDENTIALS_DATA" > gdrive-credentials.json
+        dvc remote modify myremote --local gdrive_service_account_json_file_path gdrive-credentials.json
+    
+    - name: Pull data with DVC
+      run: |
+        dvc pull data/train.csv.dvc data/val.csv.dvc data/test.csv.dvc
+    
+    - name: Validate data
+      run: |
+        python -c "
+import pandas as pd
+import sys
+
+# Load data
+train = pd.read_csv('data/train.csv')
+val = pd.read_csv('data/val.csv')
+test = pd.read_csv('data/test.csv')
+
+# Validate
+assert len(train) > 0, 'Train data is empty'
+assert len(val) > 0, 'Val data is empty'
+assert len(test) > 0, 'Test data is empty'
+assert 'text' in train.columns, 'Missing text column'
+assert 'label' in train.columns, 'Missing label column'
+
+print('✅ Data validation passed')
+        "
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v --cov=src
+
+  train:
+    name: Train Model
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Configure DVC
+      env:
+        GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+      run: |
+        dvc remote modify myremote --local gdrive_use_service_account true
+        echo "$GDRIVE_CREDENTIALS_DATA" > gdrive-credentials.json
+        dvc remote modify myremote --local gdrive_service_account_json_file_path gdrive-credentials.json
+    
+    - name: Pull data
+      run: |
+        dvc pull
+    
+    - name: Train model
+      env:
+        WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      run: |
+        python src/train.py
+    
+    - name: Track model with DVC
+      run: |
+        dvc add models/sentiment_model
+        dvc push
+    
+    - name: Commit model version
+      run: |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git add models/sentiment_model.dvc
+        git commit -m "Update model [skip ci]" || echo "No changes"
+        git push
+
+  deploy:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure DVC
+      env:
+        GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+      run: |
+        pip install dvc dvc-gdrive
+        dvc remote modify myremote --local gdrive_use_service_account true
+        echo "$GDRIVE_CREDENTIALS_DATA" > gdrive-credentials.json
+        dvc remote modify myremote --local gdrive_service_account_json_file_path gdrive-credentials.json
+    
+    - name: Pull model
+      run: |
+        dvc pull models/sentiment_model.dvc
+    
+    - name: Deploy to Render
+      env:
+        RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      run: |
+        curl -X POST $RENDER_DEPLOY_HOOK
+    
+    - name: Wait for deployment
+      run: sleep 90
+    
+    - name: Verify deployment
+      run: |
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://sentiment-api-xxxx.onrender.com/health)
+        if [ $RESPONSE -eq 200 ]; then
+          echo "✅ Deployment successful!"
+        else
+          echo "❌ Deployment failed"
+          exit 1
+        fi
+    
+    - name: Performance test
+      run: |
+        python -c "
+import requests
+import time
+
+url = 'https://sentiment-api-xxxx.onrender.com/predict'
+latencies = []
+
+for i in range(10):
+    start = time.time()
+    r = requests.post(url, json={'text': 'This is a test'})
+    latencies.append((time.time() - start) * 1000)
+
+avg_latency = sum(latencies) / len(latencies)
+print(f'Average latency: {avg_latency:.2f}ms')
+
+if avg_latency > 500:
+    print('⚠️ High latency detected')
+else:
+    print('✅ Performance good')
+        "
+
+  monitor:
+    name: Monitor Model
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Check model performance
+      env:
+        WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      run: |
+        pip install wandb
+        python -c "
+import wandb
+
+api = wandb.Api()
+runs = api.runs('YOUR_USERNAME/sentiment-analysis')
+
+if runs:
+    latest_run = runs[0]
+    accuracy = latest_run.summary.get('eval_accuracy', 0)
+    
+    print(f'Latest model accuracy: {accuracy:.4f}')
+    
+    if accuracy < 0.85:
+        print('⚠️ Model accuracy below threshold!')
+        exit(1)
+    else:
+        print('✅ Model performance acceptable')
+        "

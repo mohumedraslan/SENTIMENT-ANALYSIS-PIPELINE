@@ -1,0 +1,44 @@
+# Project Configuration
+project:
+  name: "sentiment-analysis-pipeline"
+  description: "End-to-end sentiment analysis with MLOps"
+
+# Data Configuration
+data:
+  dataset_name: "imdb"
+  train_size: 0.8
+  val_size: 0.1
+  test_size: 0.1
+  max_samples: null  # null for full dataset, or number for subset
+
+# Model Configuration
+model:
+  name: "distilbert-base-uncased"
+  num_labels: 2
+  max_length: 512
+
+# Training Configuration
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  warmup_steps: 500
+  logging_steps: 100
+  eval_steps: 500
+  save_steps: 1000
+  save_total_limit: 2
+  seed: 42
+
+# W&B Configuration
+wandb:
+  project: "sentiment-analysis"
+  entity: null  # Your W&B username
+  log_model: true
+
+# Paths
+paths:
+  data_dir: "./data"
+  model_dir: "./models"
+  cache_dir: "./cache"
+  logs_dir: "./logs"

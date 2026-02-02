@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sentiment-analysis-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      pip install dvc dvc-gdrive
+      dvc remote modify myremote --local gdrive_use_service_account true
+      echo "$GDRIVE_CREDENTIALS_DATA" > gdrive-credentials.json
+      dvc remote modify myremote --local gdrive_service_account_json_file_path gdrive-credentials.json
+      dvc pull models/sentiment_model.dvc
+    startCommand: "uvicorn src.api:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: GDRIVE_CREDENTIALS_DATA
+        sync: false
+      - key: WANDB_API_KEY
+        sync: false
