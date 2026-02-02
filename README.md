@@ -2,7 +2,7 @@
 
 Production-ready sentiment analysis with **CI/CD automation**, **DVC versioning**, **W&B experiment tracking**, achieving **>85% accuracy** with **50% faster iteration**.
 
-[
+
 
 ## 🎯 Project Highlights
 
@@ -268,7 +268,7 @@ MIT License
 
 ## 👤 Author
 
-**Your Name**
+**Mohumed Raslan**
 - GitHub: [@Mohumed Raslan](https://github.com/mohumedraslan)
 - LinkedIn: [@Mohumed Raslan](https://www.linkedin.com/in/mohumed-raslan/)
 - Email: mohumedraslan@example.com
