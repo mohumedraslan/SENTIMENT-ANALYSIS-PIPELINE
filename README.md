@@ -172,7 +172,7 @@ Tests    DVC + W&B       API       Accuracy
 
 ## 📈 Experiment Tracking
 
-View experiments on [Weights & Biases](https://wandb.ai/YOUR_USERNAME/sentiment-analysis)
+
 
 Features tracked:
 - Training/validation loss curves
